@@ -1,0 +1,22 @@
+# Рабочие черновики генерации кода
+scripts/ollama/
+
+# Сметы и любые данные заказчиков — в репозиторий не попадают никогда
+*.xlsx
+*.sobx
+*.arp
+*.arps
+sample_data/
+# Отчёты сравнения: содержат шифры, наименования и суммы из смет
+smeta-compare*.txt
+*-compare-report.txt
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+build/
+dist/
+*.spec.bak
+.venv/
+.idea/
+.vscode/
