@@ -138,3 +138,25 @@ def test_write_sobx_deflate(tmp_path, fields):
     with zipfile.ZipFile(path, 'r') as zf:
         for info in zf.infolist():
             assert info.compress_type == zipfile.ZIP_DEFLATED
+
+def test_packed_value_survives_recoding(fields):
+    """Регрессия: значение, уже упакованное в "$hex", не должно теряться.
+
+    Генератор копирует датасеты донора строка в строку, поэтому упакованные
+    значения проходят через кодировщик ПОВТОРНО. Прежняя версия пыталась
+    привести "$4170..." к float, ловила ValueError и отдавала None — данные
+    исчезали молча. Сверка поле-в-поле показала это на 200+ ячейках.
+    """
+    packed = "$40298F5C28F5C28F"
+    parsed = json.loads(dataset_json(fields, [{"ID": 1, "TAB": "x", "BA": packed}]),
+                        strict=False)
+    assert parsed["Data"][0][3] == packed
+
+
+def test_packed_value_roundtrip_is_stable(fields):
+    """Двойное прохождение через сериализацию не меняет значение."""
+    rows = [{"ID": 1, "TAB": "x", "BA": 12.78}]
+    once = json.loads(dataset_json(fields, rows), strict=False)["Data"][0][3]
+    twice = json.loads(dataset_json(fields, [{"ID": 1, "TAB": "x", "BA": once}]),
+                       strict=False)["Data"][0][3]
+    assert once == twice == "$40298F5C28F5C28F"

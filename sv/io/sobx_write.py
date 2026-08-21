@@ -29,8 +29,19 @@ INT_TYPES = {"ftInteger", "ftSmallint", "ftWord", "ftLargeint", "ftAutoInc"}
 EMPTY_DATE = "30.12.1899"
 
 
-def encode_float(value: float) -> str | int:
-    """Дробное — строкой "$<16 hex>" (IEEE-754 double big-endian); целое — числом."""
+def encode_float(value) -> str | int:
+    """Дробное — строкой "$<16 hex>" (IEEE-754 double big-endian); целое — числом.
+
+    Значение, УЖЕ упакованное в "$hex", возвращается как есть. Это не мелочь:
+    генератор копирует датасеты донора строка в строку, и такие значения проходят
+    через кодировщик повторно. Прежняя версия пыталась сделать float("$4170…"),
+    ловила ValueError и отдавала None — данные исчезали молча, без исключения,
+    ровно тем способом, против которого написан этот модуль.
+    """
+    if isinstance(value, str):
+        if value.startswith("$"):
+            return value
+        value = value.replace(",", ".")
     if float(value).is_integer():
         return int(value)
     return "$" + struct.pack(">d", float(value)).hex().upper()
@@ -59,7 +70,12 @@ def _encode_value(value, datatype: str):
         except (TypeError, ValueError):
             return None
     elif datatype in INT_TYPES:
-        return int(value)
+        # Целочисленное поле тоже может прийти уже готовым значением из донора;
+        # нечисловой текст в нём — сигнал дефекта, а не повод молча обнулить.
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return value
     else:
         # строки, даты, memo
         if isinstance(value, str):
