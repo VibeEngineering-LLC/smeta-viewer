@@ -11,6 +11,7 @@ import os
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from sv.io.arps import load as load_arps
+from sv.io.export_xlsx import export_smeta_xlsx
 from sv.io.lsr_xlsx import load as load_lsr
 from sv.io.lsr_xlsx import looks_like_lsr
 from sv.io.smetaru_xlsx import load as load_smetaru
@@ -18,6 +19,7 @@ from sv.io.sobx import load as load_sobx
 from sv.ui.smeta_tab import SmetaTab
 from sv.ui import theme
 from sv.ui.compare_dialog import CompareDialog
+from sv.ui.print_export import export_pdf, print_smeta
 
 MAX_RECENT = 10
 ORG = "VibeEngineering-LLC"
@@ -69,6 +71,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._recent_menu = file_menu.addMenu("Недавние файлы")
         self._rebuild_recent()
+
+        file_menu.addSeparator()
+
+        # #SMETA-7: экспорт и печать — действуют на АКТИВНУЮ вкладку; без открытых
+        # документов пункты выключены, чтобы не показывать пустой диалог сохранения.
+        self._act_xlsx = file_menu.addAction("Экспорт в Excel…")
+        self._act_xlsx.triggered.connect(self._export_xlsx)
+        self._act_pdf = file_menu.addAction("Экспорт в PDF…")
+        self._act_pdf.triggered.connect(self._export_pdf)
+        self._act_print = file_menu.addAction("Печать…")
+        self._act_print.setShortcut(QtGui.QKeySequence.Print)
+        self._act_print.triggered.connect(self._print)
+        self._tabs.currentChanged.connect(self._sync_actions)
 
         file_menu.addSeparator()
 
@@ -278,6 +293,75 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _sync_stack(self):
         self._stack.setCurrentIndex(1 if self._tabs.count() > 0 else 0)
+        self._sync_actions()
+
+    def _sync_actions(self):
+        """#SMETA-7: пункты экспорта и печати живут только при открытом документе."""
+        enabled = self._tabs.count() > 0
+        for act in (self._act_xlsx, self._act_pdf, self._act_print):
+            act.setEnabled(enabled)
+
+    def _current_smeta(self):
+        return getattr(self._tabs.currentWidget(), "smeta", None)
+
+    def _suggested_name(self, ext: str) -> str:
+        """Имя по умолчанию при сохранении: имя исходного файла с новым расширением."""
+        smeta = self._current_smeta()
+        if smeta is None:
+            return ""
+        base = QtCore.QFileInfo(smeta.path).completeBaseName() or "Смета"
+        directory = self._settings.value("last_export_dir", "") or QtCore.QFileInfo(smeta.path).absolutePath()
+        return os.path.join(directory, f"{base}{ext}")
+
+    def _export_xlsx(self):
+        smeta = self._current_smeta()
+        if smeta is None:
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Экспорт в Excel",
+          self._suggested_name(" (просмотр).xlsx"), "Книга Excel (*.xlsx)")
+        if not path:
+            return
+        try:
+            export_smeta_xlsx(smeta, path)
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, "Не удалось сохранить", f"{path}\n\n{exc}")
+            return
+        self._settings.setValue("last_export_dir", QtCore.QFileInfo(path).absolutePath())
+        self.statusBar().showMessage(f"Сохранено: {path}", 5000)
+
+    def _export_pdf(self):
+        smeta = self._current_smeta()
+        if smeta is None:
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Экспорт в PDF",
+          self._suggested_name(".pdf"), "Документ PDF (*.pdf)")
+        if not path:
+            return
+        # Печать сметы в тысячу позиций занимает секунды — без курсора ожидания
+        # окно выглядит зависшим. restoreOverrideCursor обязан стоять в finally:
+        # иначе при ошибке экспорта курсор ожидания остаётся висеть на приложении.
+        QtWidgets.QApplication.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+        try:
+            export_pdf(smeta, path)
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, "Не удалось сохранить", f"{path}\n\n{exc}")
+            return
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        self._settings.setValue("last_export_dir", QtCore.QFileInfo(path).absolutePath())
+        self.statusBar().showMessage(f"Сохранено: {path}", 5000)
+
+    def _print(self):
+        smeta = self._current_smeta()
+        if smeta is None:
+            return
+        try:
+            printed = print_smeta(smeta, self)
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, "Не удалось напечатать", str(exc))
+            return
+        if printed:
+            self.statusBar().showMessage("Отправлено на печать", 5000)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
