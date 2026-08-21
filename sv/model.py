@@ -179,6 +179,11 @@ class Smeta:
     def sections(self) -> list[Section]:
         """Сгруппировать позиции по полю `section`, СОХРАНЯЯ порядок первого появления."""
         section_map = {}
+        # Ключ множества — ПАРА (раздел, подраздел), а не одно имя подраздела.
+        # Глобальное множество имён теряло подраздел, встречающийся в двух разделах:
+        # «Узел П6/П7/П8» есть и в холодоснабжении, и в теплоснабжении, и во втором
+        # разделе они не попадали в список вовсе — ни в навигацию, ни в дерево
+        # генератора, куда затем сваливались их позиции.
         subsection_set = set()
         for pos in self.positions:
             sec_name = pos.section
@@ -187,9 +192,9 @@ class Smeta:
             if sec_name not in section_map:
                 section_map[sec_name] = Section(name=sec_name)
             section = section_map[sec_name]
-            if pos.subsection and pos.subsection not in subsection_set:
+            if pos.subsection and (sec_name, pos.subsection) not in subsection_set:
                 section.subsections.append(pos.subsection)
-                subsection_set.add(pos.subsection)
+                subsection_set.add((sec_name, pos.subsection))
             section.positions.append(pos)
         return list(section_map.values())
 
