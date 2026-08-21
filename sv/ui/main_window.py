@@ -20,6 +20,7 @@ from sv.ui.smeta_tab import SmetaTab
 from sv.ui import theme
 from sv.ui.compare_dialog import CompareDialog
 from sv.ui.print_export import export_pdf, print_smeta
+from sv.ui.sobx_export import export_to_sobx
 
 MAX_RECENT = 10
 ORG = "VibeEngineering-LLC"
@@ -80,6 +81,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._act_xlsx.triggered.connect(self._export_xlsx)
         self._act_pdf = file_menu.addAction("Экспорт в PDF…")
         self._act_pdf.triggered.connect(self._export_pdf)
+        self._act_sobx = file_menu.addAction("Сохранить как .sobx…")
+        self._act_sobx.triggered.connect(self._export_sobx)
         self._act_print = file_menu.addAction("Печать…")
         self._act_print.setShortcut(QtGui.QKeySequence.Print)
         self._act_print.triggered.connect(self._print)
@@ -298,7 +301,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _sync_actions(self):
         """#SMETA-7: пункты экспорта и печати живут только при открытом документе."""
         enabled = self._tabs.count() > 0
-        for act in (self._act_xlsx, self._act_pdf, self._act_print):
+        for act in (self._act_xlsx, self._act_pdf, self._act_sobx, self._act_print):
             act.setEnabled(enabled)
 
     def _current_smeta(self):
@@ -312,6 +315,12 @@ class MainWindow(QtWidgets.QMainWindow):
         base = QtCore.QFileInfo(smeta.path).completeBaseName() or "Смета"
         directory = self._settings.value("last_export_dir", "") or QtCore.QFileInfo(smeta.path).absolutePath()
         return os.path.join(directory, f"{base}{ext}")
+
+    def _export_sobx(self):
+        """#SMETA-8: запись открытой сметы в формат объекта Смета.РУ."""
+        smeta = self._current_smeta()
+        if smeta is not None:
+            export_to_sobx(smeta, self)
 
     def _export_xlsx(self):
         smeta = self._current_smeta()
