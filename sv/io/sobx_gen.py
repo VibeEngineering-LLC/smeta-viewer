@@ -19,7 +19,9 @@
 from __future__ import annotations
 
 from sv.io.sobx_donor import Donor, name_crc
-from sv.io.sobx_write import dataset_json, write_sobx
+from sv.io.sobx_lz import (blank_new_tables, build_lz_rows, detect_vat_rate,
+                          lz_table_names, new_table_names)
+from sv.io.sobx_write import dataset_json, decode_float, write_sobx
 from sv.model import Smeta
 
 
@@ -362,7 +364,12 @@ def build_sobx(smeta: Smeta, donor: Donor, out_path: str) -> dict:
             "BA": ba, "BB": bb, "BC": bc, "BD": bd, "BE": be, "BG": bg,
             "CA": ba, "CB": bb, "CC": bc, "CD": bd, "CE": be, "CG": bg,
             "EA": ba, "EB": bb, "EC": bc, "ED": bd, "EE": be, "EG": bg,
-            "RA": ra, "RB": rb, "RC": rc, "RD": rd, "RE": re_, "RG": rg, "RJ": rj, "RK": rk, "ITOGO": total
+            "RA": ra, "RB": rb, "RC": rc, "RD": rd, "RE": re_, "RG": rg, "RJ": rj, "RK": rk, "ITOGO": total,
+            # RH (затраты труда машинистов) модель не хранит. Оставить значение
+            # строки-образца нельзя: оно принадлежит ЧУЖОЙ позиции и, просуммированное
+            # по смете, даёт правдоподобное неверное число (22,16 вместо 215,39 на
+            # эталоне). Пустое поле честнее: видно, что данных нет.
+            "RH": None
         })
 
         # Индексы восстановлением (fallback — значение из tpl_cen)
@@ -399,6 +406,29 @@ def build_sobx(smeta: Smeta, donor: Donor, out_path: str) -> dict:
             "NUMBER3": 0
         })
 
+    # Шаг 4а. Итоговые ведомости под НОВУЮ смету.
+    # Без этого итоговые таблицы остаются донорскими: числа чужие, но выглядят своими.
+    node_order = [r["NUMBER"] for r in hier_rows]
+    parent_of = {r["NUMBER"]: r.get("PARENT") for r in hier_rows}
+    cen_by_node: dict = {}
+    for prow, crow in zip(pos_rows, cen_rows):
+        cen_by_node.setdefault(prow["IDHIER"], []).append(crow)
+    subtree_sums: dict = {}
+    for node in node_order:
+        acc: dict = {}
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            for crow in cen_by_node.get(current, []):
+                for field in ("RA", "RB", "RC", "RD", "RE", "RG", "RH", "RJ", "RK", "ITOGO"):
+                    # Значение может быть уже упакованным «$hex» — те поля, что
+                    # унаследованы от строки-образца и не переписывались (например RH).
+                    acc[field] = acc.get(field, 0.0) + (decode_float(crow.get(field)) or 0.0)
+            stack.extend(k for k, v in parent_of.items() if v == current)
+        subtree_sums[node] = acc
+    lz_rows, lzc_rows, _ = build_lz_rows(
+        donor, node_order, subtree_sums, next_pos + 100000, detect_vat_rate(donor))
+
     # Шаг 5. Сборка архива
     datasets = {}
     for name in donor.datasets:
@@ -414,6 +444,24 @@ def build_sobx(smeta: Smeta, donor: Donor, out_path: str) -> dict:
                         (donor.cenlvl_table, cen_rows),
                         (donor.viewnum_table, num_rows)):
         datasets[name] = dataset_json(donor.fields(name), rows_, donor.indexes(name))
+
+    lz_table, lz_values = lz_table_names(donor)
+    if lz_table and lz_rows:
+        datasets[lz_table] = dataset_json(donor.fields(lz_table), lz_rows, donor.indexes(lz_table))
+        if lz_values:
+            datasets[lz_values] = dataset_json(donor.fields(lz_values), lzc_rows,
+                                               donor.indexes(lz_values))
+    else:
+        warnings.append("итоговые ведомости не пересчитаны: в образце нет таблицы A_LZ")
+
+    # Дополнительные ведомости считать нечем — в них разбивка по заказчику,
+    # подрядчику и видам работ, а таких признаков модель не хранит. Значения
+    # снимаются: пустая ячейка честнее чужой суммы.
+    for name, rows_ in blank_new_tables(donor).items():
+        datasets[name] = dataset_json(donor.fields(name), rows_, donor.indexes(name))
+    if new_table_names(donor):
+        warnings.append("дополнительные ведомости (материалы и оборудование заказчика "
+                        "и подрядчика) оставлены пустыми — исходных признаков нет в модели")
 
     write_sobx(out_path, datasets)
 

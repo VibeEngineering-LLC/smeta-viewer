@@ -160,3 +160,25 @@ def test_packed_value_roundtrip_is_stable(fields):
     twice = json.loads(dataset_json(fields, [{"ID": 1, "TAB": "x", "BA": once}]),
                        strict=False)["Data"][0][3]
     assert once == twice == "$40298F5C28F5C28F"
+
+
+def test_integer_given_as_string_is_not_lost(fields):
+    """Регрессия: целое число, пришедшее СТРОКОЙ, не должно исчезать.
+
+    int("116246.0") — это ValueError, который ловился уровнем выше и превращался
+    в None. Из итоговых ведомостей молча пропадали целые суммы (116 246, 445 276),
+    тогда как дробные рядом записывались нормально — потому и не бросалось в глаза.
+    """
+    parsed = json.loads(dataset_json(fields, [{"ID": 1, "TAB": "x", "BA": "116246.0"}]),
+                        strict=False)
+    assert parsed["Data"][0][3] == 116246
+
+
+def test_unencodable_value_raises(fields):
+    """Значение, которое не удалось закодировать, обязано быть слышно.
+
+    Прежде такая ячейка молча становилась None. Тихо потерянные деньги дороже
+    упавшей генерации, поэтому здесь ожидается исключение.
+    """
+    with pytest.raises(ValueError):
+        dataset_json(fields, [{"ID": 1, "TAB": "x", "BA": "не число"}])

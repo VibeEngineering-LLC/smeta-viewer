@@ -42,9 +42,14 @@ def encode_float(value) -> str | int:
         if value.startswith("$"):
             return value
         value = value.replace(",", ".")
-    if float(value).is_integer():
-        return int(value)
-    return "$" + struct.pack(">d", float(value)).hex().upper()
+    # Приведение к float ОДИН раз и дальше работа с числом. Прежняя версия делала
+    # int(value) над исходной строкой: int("116246.0") — это ValueError, который
+    # ловился уровнем выше и превращался в None. Целые суммы (116 246, 445 276)
+    # исчезали из итоговых ведомостей молча, дробные при этом записывались.
+    number = float(value)
+    if number.is_integer():
+        return int(number)
+    return "$" + struct.pack(">d", number).hex().upper()
 
 
 def decode_float(value) -> float | None:
@@ -67,8 +72,13 @@ def _encode_value(value, datatype: str):
     if datatype in FLOAT_TYPES:
         try:
             return encode_float(value)
-        except (TypeError, ValueError):
-            return None
+        except (TypeError, ValueError) as exc:
+            # НЕ возвращать None: именно так уже дважды терялись данные — сначала
+            # упакованные значения донора (P-010), потом целые суммы ведомостей.
+            # Значение, которое не удалось закодировать, — это дефект, и он должен
+            # быть слышен. Деньги, исчезнувшие тихо, дороже упавшей генерации.
+            raise ValueError(
+                f"не удалось закодировать значение {value!r} как {datatype}") from exc
     elif datatype in INT_TYPES:
         # Целочисленное поле тоже может прийти уже готовым значением из донора;
         # нечисловой текст в нём — сигнал дефекта, а не повод молча обнулить.
