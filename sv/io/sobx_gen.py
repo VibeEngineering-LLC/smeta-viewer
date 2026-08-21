@@ -38,7 +38,25 @@ def _ratio(current: float, base_total: float, fallback) -> float:
     знаменателе индекс не определён — возвращается fallback (значение из шаблона)."""
     if abs(base_total) < 1e-9:
         return fallback
-    return current / base_total
+    return _clean(current / base_total)
+
+
+
+def _clean(value: float) -> float:
+    """Убрать шум округления из восстановленного коэффициента.
+
+    Суммы в файле хранятся с точностью до копейки, поэтому деление даёт мусор в
+    младших разрядах: индекс 67,02 выходит как 67,0000012, процент 121 — как
+    121,0000009. Значение притягивается к виду с двумя знаками ТОЛЬКО если оно
+    отстоит от него меньше чем на 0,0005 — то есть если разница объясняется
+    округлением сумм. Настоящий коэффициент с тремя-четырьмя знаками (67,0234)
+    под это условие не попадает и сохраняется как есть: огрублять реальные данные
+    ради красивого вида файла нельзя.
+    """
+    two = round(value, 2)
+    if abs(value - two) < 0.0005:
+        return two
+    return round(value, 4)
 
 
 def _per_unit(value_on_qty, qty: float) -> float:
@@ -348,8 +366,8 @@ def build_sobx(smeta: Smeta, donor: Donor, out_path: str) -> dict:
         # Проценты начислений
         fot = re_ + rd
         if fot > 1e-9:
-            ej = rj / fot * 100.0
-            ek = rk / fot * 100.0
+            ej = _clean(rj / fot * 100.0)
+            ek = _clean(rk / fot * 100.0)
         else:
             ej = tpl_cen.get("EJ")
             ek = tpl_cen.get("EK")
