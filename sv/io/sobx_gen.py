@@ -42,6 +42,19 @@ def _ratio(current: float, base_total: float, fallback) -> float:
 
 
 
+
+def _money(value: float) -> float:
+    """Денежная величина — ровно до копейки.
+
+    Проверено на реальном файле: во ВСЕХ денежных полях (BA..BE, RA..RK, ITOGO)
+    ни одно из 580 значений не имеет больше двух знаков после запятой. При чтении
+    же .arp итог позиции ВЫЧИСЛЯЕТСЯ, и без округления в файл уходило 12322,3741;
+    в .xlsx всплывал двоичный артефакт 12,780000000000001. Часы (BG, RG) и объёмы
+    сюда не попадают — там точность больше двух знаков законна.
+    """
+    return round(value, 2)
+
+
 def _clean(value: float) -> float:
     """Убрать шум округления из восстановленного коэффициента.
 
@@ -295,11 +308,11 @@ def build_sobx(smeta: Smeta, donor: Donor, out_path: str) -> dict:
         q = _num(p.qty)
 
         # Базисные НА ЕДИНИЦУ
-        ba = _num(p.price_base)
-        bb = _per_unit(p.resources.materialy_base, q)
-        bc = _per_unit(p.resources.ekspl_mashin_base, q)
-        bd = _per_unit(p.resources.zp_mashinistov_base, q)
-        be = _per_unit(p.resources.zarplata_base, q)
+        ba = _money(_num(p.price_base))
+        bb = _money(_per_unit(p.resources.materialy_base, q))
+        bc = _money(_per_unit(p.resources.ekspl_mashin_base, q))
+        bd = _money(_per_unit(p.resources.zp_mashinistov_base, q))
+        be = _money(_per_unit(p.resources.zarplata_base, q))
         bg = _num(p.resources.zatraty_truda_qty)
 
         # Строка позиции
@@ -327,18 +340,18 @@ def build_sobx(smeta: Smeta, donor: Donor, out_path: str) -> dict:
         pos_rows.append(pos_row)
 
         # Текущие суммы НА ВЕСЬ ОБЪЁМ — из модели
-        rb = _num(p.resources.materialy_current)
-        rc = _num(p.resources.ekspl_mashin_current)
-        rd = _num(p.resources.zp_mashinistov_current)
-        re_ = _num(p.resources.zarplata_current)
+        rb = _money(_num(p.resources.materialy_current))
+        rc = _money(_num(p.resources.ekspl_mashin_current))
+        rd = _money(_num(p.resources.zp_mashinistov_current))
+        re_ = _money(_num(p.resources.zarplata_current))
         rg = _num(p.resources.zatraty_truda_value)
-        rj = _num(p.resources.nr_current)
-        rk = _num(p.resources.sp_current)
-        ra = rb + rc + re_
+        rj = _money(_num(p.resources.nr_current))
+        rk = _money(_num(p.resources.sp_current))
+        ra = _money(rb + rc + re_)
 
-        total = _num(p.total_current)
+        total = _money(_num(p.total_current))
         if abs(total) < 1e-9 and abs(ra + rj + rk) > 1e-9:
-            total = ra + rj + rk
+            total = _money(ra + rj + rk)
         total_sum += total
 
         # Строка цен

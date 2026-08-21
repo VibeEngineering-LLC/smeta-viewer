@@ -268,3 +268,32 @@ def test_template_skips_degenerate_row():
     from sv.io.sobx_gen import _pick_template
 
     assert _pick_template(_StubDonor(), 3)["ID"] == 2
+
+
+def test_money_rounded_to_kopecks(donor_path, tmp_path):
+    """Деньги записываются ровно до копейки, даже если в модель пришло иначе.
+
+    В .arp итог позиции не хранится, а ВЫЧИСЛЯЕТСЯ, и в файл уходило 12322,3741;
+    из .xlsx приезжал двоичный артефакт 12,780000000000001. В реальном файле
+    Смета.РУ ни одно из 580 значений денежных полей не имеет больше двух знаков.
+    """
+    from sv.model import Position, Resources, Smeta
+
+    smeta = Smeta(positions=[Position(
+        code="20-02-016-01", name="Проверка округления", unit="ШТ", qty=8,
+        price_base=12.780000000000001, total_current=12322.3741,
+        section="Раздел", subsection="Подраздел",
+        resources=Resources(zarplata_current=3989.0299999,
+                            materialy_current=386.3800000001,
+                            nr_current=4904.5812, sp_current=2918.4297),
+    )])
+    out = tmp_path / "rounded.sobx"
+    build_sobx(smeta, Donor(donor_path), str(out))
+
+    cen = _rows(str(out), _table_name(str(out), "A_SMETA_CENLVL_"))[0]
+    for field in ("BA", "RA", "RB", "RE", "RJ", "RK", "ITOGO"):
+        value = decode_float(cen.get(field))
+        if value is None:
+            continue
+        assert abs(value - round(value, 2)) < 1e-9, f"{field} = {value!r}, не копейки"
+    assert abs(decode_float(cen["ITOGO"]) - 12322.37) < 0.005
