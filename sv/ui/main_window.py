@@ -11,6 +11,8 @@ import os
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from sv.io.arps import load as load_arps
+from sv.io.lsr_xlsx import load as load_lsr
+from sv.io.lsr_xlsx import looks_like_lsr
 from sv.io.smetaru_xlsx import load as load_smetaru
 from sv.io.sobx import load as load_sobx
 from sv.ui.smeta_tab import SmetaTab
@@ -165,7 +167,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # ".xlsx" не срабатывало никогда и любой файл считался неизвестным форматом.
         ext = QtCore.QFileInfo(path).suffix().lower()
         if ext == "xlsx":
-            loader = load_smetaru
+            # #SMETA-6: .xlsx бывает и формой Смета.РУ, и входящей ЛСР 421/пр —
+            # различаем по содержимому шапки, не по имени файла.
+            loader = load_lsr if looks_like_lsr(path) else load_smetaru
         elif ext == "sobx":
             loader = load_sobx
         elif ext == "arp":

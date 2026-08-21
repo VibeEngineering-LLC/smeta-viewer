@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from sv.model import Smeta
+from sv.model import Smeta, SmetaFormat
 from sv.ui import theme
 from sv.ui.tree_model import (COL_CODE, COL_CURRENT, COL_NAME, COLUMNS,
                               KIND_POSITION, KIND_RESOURCE,
@@ -145,7 +145,18 @@ class SmetaTab(QtWidgets.QWidget):
         s = self.smeta
         declared = s.totals.total_current
         actual = s.sum_positions_current()
-        if declared is None:
+        if s.fmt == SmetaFormat.LSR_XLSX and declared is not None:
+            # #SMETA-6: у входящей ЛСР итог шапки уже включает лимитированные
+            # затраты и НДС, а сумма позиций — нет. Расхождение 15-25% здесь
+            # НОРМА, а не ошибка; применять к нему тот же порог, что и для
+            # Смета.РУ (копейки), значило бы красить документ красным каждый
+            # раз без исключения — постоянная ложная тревога хуже отсутствия
+            # проверки.
+            text = (f"Сумма позиций: {fmt_money(actual)} ₽. "
+                    f"Итог шапки: {fmt_money(declared)} ₽ (включает лимитированные "
+                    f"затраты и НДС — сравнение с суммой позиций не показательно).")
+            color = theme.c("warn")
+        elif declared is None:
             # Формат не хранит итог документа (.sobx, .arp) либо строка итога не
             # найдена. Показываем посчитанную сумму и прямо говорим, что сверять
             # не с чем — молчаливая зелёная «норма» здесь была бы обманом.
